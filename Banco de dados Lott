@@ -1,0 +1,22 @@
+
+# Conectando ao banco de dados (ou criando um novo, se não existir)
+conn = sqlite3.connect('meu_banco.db')
+
+# Criando um cursor para executar comandos SQL
+cursor = conn.cursor()
+
+# Criando uma tabela
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS data (
+    id INTEGER PRIMARY KEY,
+    data TEXT
+)
+''')
+conn.commit()
+conn.close()
+# convert into JSON:
+        msg = json.dumps(dataTosend)
+        cursor.execute('INSERT INTO my_table (data) VALUES (?)', (msg,))
+        conn.commit()
+        conn.close()
+        asyncio.sleep(periodo)
