@@ -72,16 +72,82 @@ def on_message(client, userdata, msg):
     else:
         if split(msg.topic, "/")[1] = "sensors": #lembrar de corrigir no publisher!!
             on_sensorMsg(dados, msg.topic)
-    
-    
+
+# DISPOSITIVOS 
+array_maquinas: ["nome1", "nome2"]
+
+
 def on_iniMsg(dados, topic):
     
+    #recebeu o iniMsg de uma máquina.
+    #confere se ela já está na lista de array_maquinas:
+    if id_da_maquina in array_maquinas:
+        
+    else:
+        
+        
+        # Criando um cursor para executar comandos SQL
+        cursor = conn.cursor()
+        
+        # Criando uma tabela
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS "machine-id.alarms.alarm-type" (
+            id INTEGER PRIMARY KEY,
+            data TEXT
+        )
+        ''')
 
-def on_sensorMsg(dados, topic):
+        # Criando uma tabela
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS "machine-id.sensor1" (
+            id INTEGER PRIMARY KEY,
+            data TEXT
+        )
+        ''')
+        
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS "machine-id.sensor2" (
+            id INTEGER PRIMARY KEY,
+            data TEXT
+        )
+        ''')
+        client.subscribe("/sensors/"+id_da_maquina+"/sensor1")
+        client.subscribe("/sensors/"+id_da_maquina+"/sensor2")
+
+        thread confere_atv1 = Thread(confere_atividade, arg = (topic,data_interval,) )
+        thread confere_atv2 = Thread(confere_atividade, arg = (topic,data_interval,) )
+
+                            
+def confere_atividade(topic, data_interval):
+    last_timestamp = time.time() #???
+    
+    id_da_maquina = split(topic,"/")[1]
+    id_sensor = split(topic,"/")[2]
+    nome_tabela = id_da_maquina + "." + id_sensor
+    
+    while(true):
+        time.wait(10*data_interval); #delay???
+        #acessa a tabela de nome: "id_da_maquina.id_sensor"
+        #pega o ultimo item do banco.
+        #atualiza o lastimestamp de acordo como ultimo enviado e comara
+        if time.time() - last_timestamp > 10*data_interval:
+            break
+            
+    client.unsbscribe(topic)
+    #thread morre
         
 
-        arr_time.append(dados["time"])
-        arr_value1.append(dados["cpu_percent"])
+def on_sensorMsg(dados, topic):
+
+        id_da_maquina = split(topic,"/")[1]
+        id_sensor = split(topic,"/")[2]
+        nome_tabela = id_da_maquina + "." + id_sensor
+    
+        #acessa a tabela de nome: "id_da_maquina.id_sensor"
+        #escreve na última linha
+
+        arr_time["id_da_maquina.sensor1"].append(dados["time"])
+        arr_time["id_da_maquina.sensor2"].append(dados["cpu_percent"])
         arr_value2.append(dados["mousex"]/10)
         print(arr_time)
         print(arr_value1)
@@ -89,7 +155,9 @@ def on_sensorMsg(dados, topic):
 
         # convert into JSON:
         msg = json.dumps(dados)
-        cursor.execute('INSERT INTO '+ topic +' (data) VALUES (?)', (msg,))
+
+        #insere na tabela os valores recebidos
+        cursor.execute('INSERT INTO '+ nome_tabela +' (data) VALUES (?)', (msg,))
         conn.commit()
 
         #text = msg.payload.decode("utf-8")
@@ -118,7 +186,11 @@ def update(frame):
     global arr_value2
     global plt
 
+    #acessa o banco de dados
+    #carrega os valores de tempo e de valores 1 e 2.
+
     # creating a new graph or updating the graph
+    
 
     plt.cla()
     plt.plot(arr_time, arr_value1)
@@ -137,7 +209,7 @@ def update(frame):
 def threaded_function():
     global plt
     plt.tight_layout()
-    anim = FuncAnimation(plt.gcf(), update, interval = 10)
+    anim = FuncAnimation(plt.gcf(), update, interval = 10000)
     plt.show()
 
 
