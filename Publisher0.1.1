@@ -1,9 +1,7 @@
 # python 3.11
 
-#threads independentes para cada sensor
-
 #iniciar a aplicação via comando de linha:
-#"python3 nomedoarquivo.py periodo1 periodo2"
+#"python3 nomedoarquivo.py periodoMsgIni periodoVal1 periodoVal2"
 
 import sys
 
@@ -80,7 +78,7 @@ import pyautogui
 
 
 
-def sensor_loop(client, sensor_id, data_interval, num):
+def sensor_loop(client, sensor_id, data_interval, ):
     msg_count = 1
 
     while True:
@@ -146,14 +144,36 @@ def sensor_loop(client, sensor_id, data_interval, num):
         status = result[0]
         if status == 0:
             print(f"Send `{msg}` to topic `{topic}`")
-            print(num)
         else:
             print(f"Failed to send message to topic {topic}")
 
-        
+      
 
 
+def iniMsg_loop(client, ini_msg_interval, ):
+    while True:
 
+        array_tosend = {
+            "machine_id": id_da_maquina,
+            "sensors": sensors
+        }
+
+        time.sleep(ini_msg_interval)
+
+        # convert into JSON:
+        msg = json.dumps(array_tosend)
+
+
+        topic = "/sensor_monitors"
+
+        result = client.publish(topic, msg)
+
+        # result: [0, 1]
+        status = result[0]
+        if status == 0:
+            print(f"Send `{msg}` to topic `{topic}`")
+        else:
+            print(f"Failed to send message to topic {topic}")
 
 def run():
 
@@ -162,15 +182,18 @@ def run():
     client = connect_mqtt()
     client.loop_start()
 
-    sensors[0]["data_interval"] = int(sys.argv[1])
-    sensors[1]["data_interval"] = int(sys.argv[2])
+    sensors[0]["data_interval"] = int(sys.argv[2])
+    sensors[1]["data_interval"] = int(sys.argv[3])
+
+    ini_msg_interval = int(sys.argv[1])
 
     thread_sensor1 = Thread(target = sensor_loop, args = (client, sensors[0]["sensor_id"],sensors[0]["data_interval"], ))
     thread_sensor1.start()
     thread_sensor2 = Thread(target = sensor_loop, args = (client, sensors[1]["sensor_id"],sensors[1]["data_interval"], ))
     thread_sensor2.start()
 
-
+    thread_iniMsg = Thread(target = iniMsg_loop, args = (client, ini_msg_interval ))
+    thread_iniMsg.start()
 
     client.loop_stop()
 
