@@ -14,6 +14,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
+from threading import Thread
+
 
 
 broker = 'broker.emqx.io'
@@ -26,7 +28,22 @@ client_id = f'subscribe-{random.randint(0, 100)}'
 
 
 
+## BANCO DE DADOS ##
+# Conectando ao banco de dados (ou criando um novo, se não existir)
+conn = sqlite3.connect('meu_banco.db')
 
+# Criando um cursor para executar comandos SQL
+cursor = conn.cursor()
+
+# Criando uma tabela
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS my_table (
+    id INTEGER PRIMARY KEY,
+    data TEXT
+)
+''')
+conn.commit()
+## fim -- BANCO DE DADOS ##
 
 
 
@@ -48,27 +65,20 @@ arr_value = []
 arr_value1 = []
 arr_value2 = []
 
-
-def subscribe(client: mqtt_client):
-
+def on_message(client, userdata, msg):
+    dados = json.loads(msg.payload.decode())
+    if msg.topic == "/sensor_monitors":
+        on_iniMsg(dados, msg.topic)
+    else:
+        if split(msg.topic, "/")[1] = "sensors": #lembrar de corrigir no publisher!!
+            on_sensorMsg(dados, msg.topic)
     
-    # Conectando ao banco de dados (ou criando um novo, se não existir)
-    conn = sqlite3.connect('meu_banco.db')
+    
+def on_iniMsg(dados, topic):
+    
 
-    # Criando um cursor para executar comandos SQL
-    cursor = conn.cursor()
-
-    # Criando uma tabela
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS my_table (
-        id INTEGER PRIMARY KEY,
-        data TEXT
-    )
-    ''')
-    conn.commit()
-
-    def on_message(client, userdata, msg):
-        dados = json.loads(msg.payload.decode())
+def on_sensorMsg(dados, topic):
+        
 
         arr_time.append(dados["time"])
         arr_value1.append(dados["cpu_percent"])
@@ -86,7 +96,12 @@ def subscribe(client: mqtt_client):
 #        print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
 #        update(plt.gcf())
 
-    client.subscribe(topic)
+
+def subscribe_inicial(client: mqtt_client):
+
+    
+
+    client.subscribe("/sensor_monitors")
     client.on_message = on_message
 
 
@@ -118,8 +133,6 @@ def update(frame):
 
 
 
-
-from threading import Thread
 
 def threaded_function():
     global plt
