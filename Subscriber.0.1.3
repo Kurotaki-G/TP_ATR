@@ -1,0 +1,306 @@
+# python 3.11
+
+# inatividade ok!!
+
+
+
+import sys
+import time
+
+import random
+
+import sqlite3
+
+from datetime import datetime
+from paho.mqtt import client as mqtt_client
+
+
+import json
+import numpy as np
+
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
+from threading import Thread
+
+
+
+broker = 'broker.emqx.io'
+port = 1883
+topic = "python/mqttGK"
+# Generate a Client ID with the subscribe prefix.
+client_id = f'subscribe-{random.randint(0, 100)}'
+# username = 'emqx'
+# password = 'public'
+
+
+
+## BANCO DE DADOS ##
+# Conectando ao banco de dados (ou criando um novo, se não existir)
+conn = sqlite3.connect('meu_banco.db')
+
+# Criando um cursor para executar comandos SQL
+cursor = conn.cursor()
+
+
+
+def connect_mqtt() -> mqtt_client:
+    def on_connect(client, userdata, flags, rc):
+        if rc == 0:
+            print("Connected to MQTT Broker!")
+        else:
+            print("Failed to connect, return code %d\n", rc)
+
+    client = mqtt_client.Client(client_id)
+    # client.username_pw_set(username, password)
+    client.on_connect = on_connect
+    client.connect(broker, port)
+    return client
+
+arr_time = []
+arr_value1 = []
+arr_value2 = []
+
+
+# DISPOSITIVOS 
+array_maquinas = ["maq1"]
+
+def on_message(client, userdata, msg):
+    dados = json.loads(msg.payload.decode())
+
+    if msg.topic == "/sensor_monitors":
+
+        on_initialMsg(dados, client)
+    else:
+        print("dado do sensor!!!!")
+        
+        if msg.topic.split("/")[1] == "sensors": #lembrar de corrigir no publisher!!
+            on_sensorMsg(dados, msg.topic)
+
+
+def iso_to_int(time_stamp):
+
+    date = time_stamp.split("T")[0]
+    hour = time_stamp.split("T")[1]
+
+    total = float(hour.split(":")[2])
+    total += int(hour.split(":")[1]) * 60 #min
+    total += int(date.split("-")[0]) * 60 * 60 #hour
+    total += int(date.split("-")[2]) * 60 * 60 * 24 #date
+    total += (int(date.split("-")[1]) - 1) * 60 * 60 * 24 *30
+    total += (int(date.split("-")[0]) - 1970) * 60 * 60 * 24 * 365
+    return total 
+               
+def confere_atividade(topic, data_interval):
+
+    num_inativo = 10
+    
+    id_da_maquina = topic.split("/")[2]
+    id_sensor = topic.split("/")[3]
+    nome_tabela = id_da_maquina + "." + id_sensor
+    
+    # Conectando ao banco de dados (ou criando um novo, se não existir)
+    conn = sqlite3.connect('meu_banco.db')
+
+    # Criando um cursor para executar comandos SQL
+    cursor_consulta = conn.cursor()
+
+    while(True):
+        time.sleep(num_inativo/2*data_interval); #delay???
+
+        print("Conferindo inatividade...")
+
+        current_time = datetime.now().isoformat()
+        last_timestamp = current_time #provisório, apenas para caso dê erro no SQL ter valor válido
+
+        for row in cursor_consulta.execute("SELECT time_stamp, value FROM '"+id_da_maquina+"."+id_sensor+"' ORDER BY id DESC LIMIT "+str(num_inativo)):
+            last_timestamp = row[0]
+
+
+
+        if iso_to_int(current_time) - iso_to_int(last_timestamp) > num_inativo*data_interval:
+            break
+            
+    print("Inatividade!!!")
+    client.unsubscribe(topic)
+    #thread morre
+        
+
+def on_initialMsg(dados, client):
+
+
+
+    global array_maquinas
+
+    id_da_maquina = dados["machine_id"]
+
+    sensor1 = dados["sensors"][0]["sensor_id"]
+    sensor2 = dados["sensors"][1]["sensor_id"]
+
+    data_interval1 = dados["sensors"][0]["data_interval"]
+    data_interval2 = dados["sensors"][1]["data_interval"]
+
+    data_type1 = dados["sensors"][0]["data_type"]
+    data_type2 = dados["sensors"][1]["data_type"]
+
+    
+    topic1 = "/sensors/"+id_da_maquina+"/"+sensor1
+    topic2 = "/sensors/"+id_da_maquina+"/"+sensor2
+
+    if id_da_maquina in array_maquinas:
+        print("nada modificado")
+
+    else:
+
+        #recebeu o iniMsg de uma máquina.
+        #confere se ela já está na lista de array_maquinas:
+    #        if id_da_maquina in array_maquinas:
+    #
+    #            print("Ok")
+    #
+    #        else:
+            
+        # Criando um cursor para executar comandos SQL
+        cursor = conn.cursor()
+        
+        # Criando uma tabela
+        cursor.execute("CREATE TABLE IF NOT EXISTS '"+id_da_maquina+"."+sensor1+"' (id INTEGER PRIMARY KEY, time_stamp TIMESTAMP, value "+data_type1+")")
+        cursor.execute("CREATE TABLE IF NOT EXISTS '"+id_da_maquina+"."+sensor2+"' (id INTEGER PRIMARY KEY, time_stamp TIMESTAMP, value "+data_type2+")")
+
+        client.subscribe(topic1,1)
+        client.subscribe(topic2,1)
+
+        confere_atv1 = Thread(target = confere_atividade, args = (topic1, data_interval1, ) )
+        confere_atv2 = Thread(target = confere_atividade, args = (topic2, data_interval2, ) ) 
+        confere_atv1.start()
+        confere_atv2.start()
+
+        print("cadastrado com sucesso")
+
+        array_maquinas.append(id_da_maquina)
+
+def on_sensorMsg(dados, topic):
+
+        id_da_maquina = topic.split("/")[2]
+        id_sensor = topic.split("/")[3]
+        nome_tabela = id_da_maquina + "." + id_sensor
+    
+        #acessa a tabela de nome: "id_da_maquina.id_sensor"
+        #escreve na última linha
+
+
+        # convert into JSON:
+        msg = json.dumps(dados)
+
+        #insere na tabela os valores recebidos
+        cursor.execute("INSERT INTO '"+ nome_tabela +"' (time_stamp, value) VALUES (?, ?)", (dados["time_stamp"], dados["value"]))
+        conn.commit()
+
+        #text = msg.payload.decode("utf-8")
+#        print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
+#        update(plt.gcf())
+
+
+
+
+sel_maquina = ""
+sel_sensor1 = ""
+sel_sensor2 = ""
+
+def column(matrix, i):
+    return [row[i] for row in matrix]
+
+# updates the data and graph
+def update(frame):
+    global arr_time
+    global arr_value1
+    global arr_value2
+    global plt
+
+    #acessa o banco de dados
+    #carrega os valores de tempo e de valores 1 e 2.
+
+    # creating a new graph or updating the graph
+
+    global sel_maquina
+    global sel_sensor1
+    global sel_sensor2
+    
+    qtd_dados = 10
+    
+    i = 0
+
+    arr_time.clear()
+    arr_value1.clear()
+    arr_value2.clear()
+
+    ## BANCO DE DADOS ##
+    # Conectando ao banco de dados (ou criando um novo, se não existir)
+    conn = sqlite3.connect('meu_banco.db')
+
+    # Criando um cursor para executar comandos SQL
+    cursor_consulta = conn.cursor()
+    
+
+    for row in cursor_consulta.execute("SELECT time_stamp, value FROM '"+sel_maquina+"."+sel_sensor1+"' ORDER BY id DESC LIMIT "+str(qtd_dados)):
+        arr_time.append(row[0])
+        arr_value1.append(row[1])
+        i += 1
+
+    i = 0
+    for row in cursor_consulta.execute("SELECT time_stamp, value FROM '"+sel_maquina+"."+sel_sensor2+"' ORDER BY id DESC LIMIT "+str(qtd_dados)):
+        arr_value2.append(row[1])
+        i += 1
+
+    plt.cla()
+    plt.plot(arr_time, arr_value1)
+    plt.plot(arr_time, arr_value2)
+
+    # creating a new graph or updating the graph
+    id_ini = len(arr_time)-10
+    if id_ini <= 0: 
+        id_ini = 0
+    plt.xlim(arr_time[id_ini], arr_time[len(arr_time)-1])
+    plt.ylim(0, 100)
+
+
+
+plt.tight_layout()
+
+def threaded_function():
+    global plt
+
+#    anim = FuncAnimation(plt.gcf(), update, interval = 10000, cache_frame_data = False)
+#    plt.show()
+
+
+client = connect_mqtt()
+
+client.subscribe("/sensor_monitors",1)
+
+client.on_message = on_message
+
+sel_maquina = sys.argv[1]
+sel_sensor1 = sys.argv[2]
+sel_sensor2 = sys.argv[3]
+
+
+thread = Thread(target = threaded_function)
+thread.start()
+
+client.loop_forever()
+
+thread.join()
+
+
+
+def run():
+    print("running!")
+
+
+if __name__ == '__main__':
+    run()
+
+
+
+
